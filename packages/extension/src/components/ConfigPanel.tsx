@@ -6,19 +6,85 @@ import {
 	EyeOff,
 	FoldVertical,
 	HatGlasses,
-	Home,
 	Loader2,
+	RefreshCw,
 	Scale,
 	UnfoldVertical,
+	Wifi,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { siGithub } from 'simple-icons'
 
 import { DEMO_BASE_URL, DEMO_MODEL, isTestingEndpoint } from '@/agent/constants'
-import type { ExtConfig, LanguagePreference } from '@/agent/useAgent'
+import { applyTheme } from '@/agent/useAgent'
+import type { ExtConfig, LanguagePreference, ThemePreference } from '@/agent/useAgent'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+
+type LLMProvider =
+	| 'openai'
+	| 'anthropic'
+	| 'aliyun'
+	| 'ollama'
+	| 'kilocode'
+	| 'puter'
+	| 'pollinations'
+	| 'opencode'
+
+interface ProviderConfig {
+	id: LLMProvider
+	name: string
+	baseURL: string
+	hasTestButton: boolean
+}
+
+const PROVIDERS: ProviderConfig[] = [
+	{ id: 'openai', name: 'OpenAI', baseURL: 'https://api.openai.com/v1', hasTestButton: false },
+	{
+		id: 'anthropic',
+		name: 'Anthropic',
+		baseURL: 'https://api.anthropic.com',
+		hasTestButton: false,
+	},
+	{
+		id: 'aliyun',
+		name: '阿里云/通义千问',
+		baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+		hasTestButton: false,
+	},
+	{ id: 'ollama', name: 'Ollama', baseURL: 'http://localhost:11434/v1', hasTestButton: false },
+	{
+		id: 'kilocode',
+		name: 'KiloCode',
+		baseURL: 'https://api.kilo.ai/api/gateway',
+		hasTestButton: true,
+	},
+	{
+		id: 'puter',
+		name: 'Puter',
+		baseURL: 'https://api.puter.com/puterai/openai/v1',
+		hasTestButton: true,
+	},
+	{
+		id: 'pollinations',
+		name: 'Pollinations',
+		baseURL: 'https://gen.pollinations.ai/v1',
+		hasTestButton: true,
+	},
+	{ id: 'opencode', name: 'Opencode', baseURL: 'https://opencode.ai/zen/v1', hasTestButton: true },
+]
+
+const DEFAULT_PROVIDER = PROVIDERS[0]
+
+function getProviderByBaseURL(baseURL: string): ProviderConfig {
+	return PROVIDERS.find((p) => p.baseURL === baseURL) || PROVIDERS[0]
+}
+
+function detectProvider(baseURL: string): LLMProvider {
+	const provider = getProviderByBaseURL(baseURL)
+	return provider.id
+}
 
 interface ConfigPanelProps {
 	config: ExtConfig | null
@@ -42,12 +108,19 @@ export function ConfigPanel({ config, onSave, onClose }: ConfigPanelProps) {
 	const [disableNamedToolChoice, setDisableNamedToolChoice] = useState(
 		config?.disableNamedToolChoice ?? false
 	)
+	const [theme, setTheme] = useState<ThemePreference>(config?.theme ?? 'system')
 	const [advancedOpen, setAdvancedOpen] = useState(false)
 	const [saving, setSaving] = useState(false)
 	const [userAuthToken, setUserAuthToken] = useState('')
 	const [copied, setCopied] = useState(false)
 	const [showToken, setShowToken] = useState(false)
 	const [showApiKey, setShowApiKey] = useState(false)
+	const [selectedProvider, setSelectedProvider] = useState<LLMProvider>(() =>
+		detectProvider(config?.baseURL || DEMO_BASE_URL)
+	)
+	const [testing, setTesting] = useState(false)
+	const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
+	const [resetDropdownOpen, setResetDropdownOpen] = useState(false)
 
 	const [prevConfig, setPrevConfig] = useState(config)
 	if (prevConfig !== config) {
@@ -61,6 +134,9 @@ export function ConfigPanel({ config, onSave, onClose }: ConfigPanelProps) {
 		setExperimentalLlmsTxt(config?.experimentalLlmsTxt ?? false)
 		setExperimentalIncludeAllTabs(config?.experimentalIncludeAllTabs ?? false)
 		setDisableNamedToolChoice(config?.disableNamedToolChoice ?? false)
+		setTheme(config?.theme ?? 'system')
+		setSelectedProvider(detectProvider(config?.baseURL || DEMO_BASE_URL))
+		setTestResult(null)
 	}
 
 	// Poll for user auth token every second until found
@@ -87,6 +163,10 @@ export function ConfigPanel({ config, onSave, onClose }: ConfigPanelProps) {
 		}
 	}, [])
 
+	useEffect(() => {
+		applyTheme(config?.theme ?? 'system')
+	}, [config?.theme])
+
 	const handleCopyToken = async () => {
 		if (userAuthToken) {
 			await navigator.clipboard.writeText(userAuthToken)
@@ -103,15 +183,63 @@ export function ConfigPanel({ config, onSave, onClose }: ConfigPanelProps) {
 				baseURL,
 				model,
 				language,
+				theme,
 				maxSteps: maxSteps || undefined,
 				systemInstruction: systemInstruction || undefined,
 				experimentalLlmsTxt,
 				experimentalIncludeAllTabs,
 				disableNamedToolChoice,
 			})
+			applyTheme(theme)
 		} finally {
 			setSaving(false)
 		}
+	}
+
+	const handleProviderChange = (providerId: LLMProvider) => {
+		setSelectedProvider(providerId)
+		const provider = PROVIDERS.find((p) => p.id === providerId)
+		if (provider) {
+			setBaseURL(provider.baseURL)
+		}
+		setTestResult(null)
+	}
+
+	const handleTestConnection = async () => {
+		setTesting(true)
+		setTestResult(null)
+		try {
+			const response = await fetch(`${baseURL}/models`, {
+				method: 'GET',
+				headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+			})
+			if (response.ok) {
+				const data = await response.json()
+				const models =
+					data.data
+						?.slice(0, 5)
+						.map((m: { id: string }) => m.id)
+						.join(', ') || 'available'
+				setTestResult({ success: true, message: `Models: ${models}` })
+			} else {
+				setTestResult({
+					success: false,
+					message: `Error: ${response.status} ${response.statusText}`,
+				})
+			}
+		} catch (error) {
+			setTestResult({
+				success: false,
+				message: `Connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+			})
+		} finally {
+			setTesting(false)
+		}
+	}
+
+	const handleResetProvider = () => {
+		handleProviderChange(DEFAULT_PROVIDER.id)
+		setResetDropdownOpen(false)
 	}
 
 	return (
@@ -183,21 +311,102 @@ export function ConfigPanel({ config, onSave, onClose }: ConfigPanelProps) {
 				target="_blank"
 				className="flex items-center justify-between p-3 rounded-md border bg-muted/50 text-xs font-medium text-muted-foreground hover:text-foreground hover:border-foreground/20 transition-colors"
 			>
-				Manage Page Agent Hub
+				Manage Squish-Browser Hub
 				<ExternalLink className="size-3" />
 			</a>
+
+			{/* Theme Section */}
+			<div className="flex flex-col gap-1.5">
+				<label className="text-xs text-muted-foreground">Theme</label>
+				<select
+					value={theme ?? 'system'}
+					onChange={(e) => setTheme(e.target.value as ThemePreference)}
+					className="h-8 text-xs rounded-md border border-input bg-background px-2 cursor-pointer"
+				>
+					<option value="system">System</option>
+					<option value="light">Light</option>
+					<option value="dark">Dark</option>
+				</select>
+			</div>
+
+			<div className="flex flex-col gap-1.5">
+				<label htmlFor="provider" className="text-xs text-muted-foreground">
+					Provider
+				</label>
+				<div className="flex gap-2 items-center">
+					<select
+						id="provider"
+						value={selectedProvider}
+						onChange={(e) => handleProviderChange(e.target.value as LLMProvider)}
+						className="h-8 text-xs rounded-md border border-input bg-background px-2 cursor-pointer flex-1 min-w-0"
+					>
+						{PROVIDERS.map((p) => (
+							<option key={p.id} value={p.id}>
+								{p.name}
+							</option>
+						))}
+					</select>
+					<div className="relative">
+						<Button
+							variant="outline"
+							size="icon"
+							className="h-8 w-8 shrink-0 cursor-pointer"
+							onClick={() => setResetDropdownOpen(!resetDropdownOpen)}
+							title="Reset to default"
+							aria-label="Reset to default provider"
+						>
+							<RefreshCw className="size-3" />
+						</Button>
+						{resetDropdownOpen && (
+							<div className="absolute right-0 top-full mt-1 z-10 p-2 rounded-md border bg-popover shadow-md text-[10px] whitespace-nowrap">
+								<button
+									onClick={handleResetProvider}
+									className="hover:bg-accent px-2 py-1 rounded cursor-pointer"
+								>
+									Reset to OpenAI
+								</button>
+							</div>
+						)}
+					</div>
+				</div>
+			</div>
 
 			<div className="flex flex-col gap-1.5">
 				<label htmlFor="base-url" className="text-xs text-muted-foreground">
 					Base URL
 				</label>
-				<Input
-					id="base-url"
-					placeholder="https://api.openai.com/v1"
-					value={baseURL}
-					onChange={(e) => setBaseURL(e.target.value)}
-					className="text-xs h-8"
-				/>
+				<div className="flex gap-2 items-center">
+					<Input
+						id="base-url"
+						placeholder="https://api.openai.com/v1"
+						value={baseURL}
+						onChange={(e) => {
+							setBaseURL(e.target.value)
+							setTestResult(null)
+						}}
+						className="text-xs h-8 flex-1"
+					/>
+					{PROVIDERS.find((p) => p.id === selectedProvider)?.hasTestButton && (
+						<Button
+							variant="outline"
+							size="icon"
+							className="h-8 w-8 shrink-0 cursor-pointer"
+							onClick={handleTestConnection}
+							disabled={testing}
+							title="Test connection"
+							aria-label="Test connection"
+						>
+							{testing ? <Loader2 className="size-3 animate-spin" /> : <Wifi className="size-3" />}
+						</Button>
+					)}
+				</div>
+				{testResult && (
+					<div
+						className={`text-[10px] p-1.5 rounded ${testResult.success ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-600'}`}
+					>
+						{testResult.message}
+					</div>
+				)}
 			</div>
 
 			{/* Testing API notice */}
@@ -360,16 +569,6 @@ export function ConfigPanel({ config, onSave, onClose }: ConfigPanelProps) {
 				</div>
 
 				<div className="flex flex-col items-end">
-					<a
-						href="https://alibaba.github.io/page-agent/"
-						target="_blank"
-						rel="noopener noreferrer"
-						className="flex items-center gap-1 hover:text-foreground"
-					>
-						<Home className="size-3" />
-						<span>Home Page</span>
-					</a>
-
 					<a
 						href="https://github.com/alibaba/page-agent/blob/main/docs/terms-and-privacy.md"
 						target="_blank"

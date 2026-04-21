@@ -17,6 +17,8 @@ import { DEMO_CONFIG, migrateLegacyEndpoint } from './constants'
 /** Language preference: undefined means follow system */
 export type LanguagePreference = SupportedLanguage | undefined
 
+export type ThemePreference = 'light' | 'dark' | 'system'
+
 export interface AdvancedConfig {
 	maxSteps?: number
 	systemInstruction?: string
@@ -27,6 +29,7 @@ export interface AdvancedConfig {
 
 export interface ExtConfig extends LLMConfig, AdvancedConfig {
 	language?: LanguagePreference
+	theme?: ThemePreference
 }
 
 export interface UseAgentResult {
@@ -49,22 +52,25 @@ export function useAgent(): UseAgentResult {
 	const [config, setConfig] = useState<ExtConfig | null>(null)
 
 	useEffect(() => {
-		chrome.storage.local.get(['llmConfig', 'language', 'advancedConfig']).then((result) => {
-			let llmConfig = (result.llmConfig as LLMConfig) ?? DEMO_CONFIG
-			const language = (result.language as SupportedLanguage) || undefined
-			const advancedConfig = (result.advancedConfig as AdvancedConfig) ?? {}
+		chrome.storage.local
+			.get(['llmConfig', 'language', 'advancedConfig', 'theme'])
+			.then((result) => {
+				let llmConfig = (result.llmConfig as LLMConfig) ?? DEMO_CONFIG
+				const language = (result.language as SupportedLanguage) || undefined
+				const advancedConfig = (result.advancedConfig as AdvancedConfig) ?? {}
+				const theme = (result.theme as ThemePreference) || undefined
 
-			// Auto-migrate legacy testing endpoints
-			const migrated = migrateLegacyEndpoint(llmConfig)
-			if (migrated !== llmConfig) {
-				llmConfig = migrated
-				chrome.storage.local.set({ llmConfig: migrated })
-			} else if (!result.llmConfig) {
-				chrome.storage.local.set({ llmConfig: DEMO_CONFIG })
-			}
+				// Auto-migrate legacy testing endpoints
+				const migrated = migrateLegacyEndpoint(llmConfig)
+				if (migrated !== llmConfig) {
+					llmConfig = migrated
+					chrome.storage.local.set({ llmConfig: migrated })
+				} else if (!result.llmConfig) {
+					chrome.storage.local.set({ llmConfig: DEMO_CONFIG })
+				}
 
-			setConfig({ ...llmConfig, ...advancedConfig, language })
-		})
+				setConfig({ ...llmConfig, ...advancedConfig, language, theme })
+			})
 	}, [])
 
 	useEffect(() => {
@@ -123,6 +129,7 @@ export function useAgent(): UseAgentResult {
 	const configure = useCallback(
 		async ({
 			language,
+			theme,
 			maxSteps,
 			systemInstruction,
 			experimentalLlmsTxt,
@@ -136,6 +143,11 @@ export function useAgent(): UseAgentResult {
 			} else {
 				await chrome.storage.local.remove('language')
 			}
+			if (theme) {
+				await chrome.storage.local.set({ theme })
+			} else {
+				await chrome.storage.local.remove('theme')
+			}
 			const advancedConfig: AdvancedConfig = {
 				maxSteps,
 				systemInstruction,
@@ -144,7 +156,7 @@ export function useAgent(): UseAgentResult {
 				disableNamedToolChoice,
 			}
 			await chrome.storage.local.set({ advancedConfig })
-			setConfig({ ...llmConfig, ...advancedConfig, language })
+			setConfig({ ...llmConfig, ...advancedConfig, language, theme })
 		},
 		[]
 	)
@@ -158,5 +170,14 @@ export function useAgent(): UseAgentResult {
 		execute,
 		stop,
 		configure,
+	}
+}
+
+export function applyTheme(theme: ThemePreference) {
+	if (theme === 'system') {
+		const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+		document.documentElement.classList.toggle('dark', prefersDark)
+	} else {
+		document.documentElement.classList.toggle('dark', theme === 'dark')
 	}
 }
