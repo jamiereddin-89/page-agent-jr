@@ -214,10 +214,8 @@ export class PageAgentCore extends EventTarget {
 		// Show mask
 		await this.pageController.showMask()
 
-		if (this.#abortController) {
-			this.#abortController.abort()
-			this.#abortController = new AbortController()
-		}
+		this.#abortController.abort()
+		this.#abortController = new AbortController()
 
 		this.history = []
 		this.#setStatus('running')
