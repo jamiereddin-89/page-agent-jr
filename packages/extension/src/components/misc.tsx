@@ -1,6 +1,6 @@
 import type { AgentStatus } from '@page-agent/core'
 import { Motion } from 'ai-motion'
-import { BookOpen, Globe } from 'lucide-react'
+import { Globe } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import { siGithub } from 'simple-icons'
 
@@ -34,7 +34,21 @@ export function StatusDot({ status }: { status: AgentStatus }) {
 }
 
 export function Logo({ className }: { className?: string }) {
-	return <img src="/assets/page-agent-256.webp" alt="Page Agent" className={cn('', className)} />
+	return (
+		<svg viewBox="0 0 32 32" className={cn('text-foreground', className)} fill="currentColor">
+			<rect x="2" y="2" width="28" height="28" rx="6" fill="currentColor" />
+			<text
+				x="16"
+				y="22"
+				textAnchor="middle"
+				fontSize="18"
+				fontWeight="bold"
+				fill="var(--background)"
+			>
+				S
+			</text>
+		</svg>
+	)
 }
 
 // Full-screen ai-motion glow overlay, shown only while running
@@ -90,17 +104,15 @@ export function MotionOverlay({ active }: { active: boolean }) {
 	)
 }
 
-// Empty state with logo and breathing glow
+// Empty state with logo
 export function EmptyState() {
 	return (
 		<div className="flex flex-col items-center justify-center h-full gap-4 text-center px-6">
-			<div className="relative select-none pointer-events-none">
-				<div className="absolute inset-0 -m-6 rounded-full bg-[conic-gradient(from_180deg,oklch(0.55_0.2_280),oklch(0.5_0.15_230),oklch(0.6_0.18_310),oklch(0.55_0.2_280))] blur-2xl animate-[glow-a_5s_ease-in-out_infinite]" />
-				<div className="absolute inset-0 -m-6 rounded-full bg-[conic-gradient(from_0deg,oklch(0.55_0.18_160),oklch(0.5_0.2_200),oklch(0.6_0.15_120),oklch(0.55_0.18_160))] blur-2xl animate-[glow-b_5s_ease-in-out_infinite]" />
-				<Logo className="relative size-20 opacity-80" />
+			<div className="select-none pointer-events-none">
+				<Logo className="size-20 opacity-60" />
 			</div>
 			<div>
-				<h2 className="text-base font-medium text-foreground mb-1">Page Agent Ext</h2>
+				<h2 className="text-base font-medium text-foreground mb-1">Squish-Browser</h2>
 				<TypingAnimation
 					className="text-sm text-muted-foreground"
 					words={[
@@ -128,15 +140,6 @@ export function EmptyState() {
 					<svg role="img" viewBox="0 0 24 24" className="size-4 fill-current">
 						<path d={siGithub.path} />
 					</svg>
-				</a>
-				<a
-					href="https://alibaba.github.io/page-agent/docs/features/chrome-extension"
-					target="_blank"
-					rel="noopener noreferrer"
-					className="hover:text-foreground transition-colors"
-					title="Documentation"
-				>
-					<BookOpen className="size-4" />
 				</a>
 				<a
 					href="https://alibaba.github.io/page-agent"
